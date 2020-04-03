@@ -31,6 +31,8 @@
 #include "shareddata.h"
 #include "virtualpidtable.h"
 
+#define PROC_PREFIX "/proc/"
+
 using namespace dmtcp;
 
 extern "C" pid_t dmtcp_update_ppid();
@@ -110,7 +112,7 @@ pidVirt_PrepareForExec(DmtcpEventData_t *data)
   Util::setVirtualPidEnvVar(getpid(), virtPpid, realPpid);
 
   JASSERT(data != NULL);
-  jalib::JBinarySerializeWriterRaw wr("", data->serializerInfo.fd);
+  jalib::JBinarySerializeWriterRaw wr("", data->preExec.serializationFd);
   VirtualPidTable::instance().serialize(wr);
 }
 
@@ -118,10 +120,55 @@ static void
 pidVirt_PostExec(DmtcpEventData_t *data)
 {
   JASSERT(data != NULL);
-  jalib::JBinarySerializeReaderRaw rd("", data->serializerInfo.fd);
+  jalib::JBinarySerializeReaderRaw rd("", data->postExec.serializationFd);
   VirtualPidTable::instance().serialize(rd);
   VirtualPidTable::instance().refresh();
 }
+
+// FIXME:  This function needs third argument newpathsize, or assume PATH_MAX
+static void
+pid_virtual_to_real_filepath(DmtcpEventData_t *data)
+{
+  if (!Util::strStartsWith(data->virtualToRealPath.path, PROC_PREFIX)) {
+    return;
+  }
+
+  int index = strlen(PROC_PREFIX);
+  char *rest;
+  pid_t virtualPid = strtol(&data->virtualToRealPath.path[index], &rest, 0);
+
+  if (virtualPid <= 0) {
+    return;
+  }
+
+  char newPath[PATH_MAX];
+  pid_t realPid = VIRTUAL_TO_REAL_PID(virtualPid);
+  sprintf(newPath, "/proc/%d%s", realPid, rest);
+  strncpy(data->virtualToRealPath.path, newPath, sizeof(newPath));
+}
+
+// FIXME:  This function needs third argument newpathsize, or assume PATH_MAX
+static void
+pid_real_to_virtual_filepath(DmtcpEventData_t *data)
+{
+  if (!Util::strStartsWith(data->realToVirtualPath.path, PROC_PREFIX)) {
+    return;
+  }
+
+  int index = strlen(PROC_PREFIX);
+  char *rest;
+  pid_t realPid = strtol(&data->realToVirtualPath.path[index], &rest, 0);
+
+  if (realPid <= 0) {
+    return;
+  }
+
+  char newPath[PATH_MAX];
+  pid_t virtualPid = REAL_TO_VIRTUAL_PID(realPid);
+  sprintf(newPath, "/proc/%d%s", virtualPid, rest);
+  strncpy(data->realToVirtualPath.path, newPath, sizeof(newPath));
+}
+
 
 static int
 openSharedFile(string name, int flags)
@@ -269,6 +316,14 @@ pid_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
     pidVirt_ThreadExit(data);
     break;
 
+  case DMTCP_EVENT_REAL_TO_VIRTUAL_PATH:
+    pid_real_to_virtual_filepath(data);
+    break;
+
+  case DMTCP_EVENT_VIRTUAL_TO_REAL_PATH:
+    pid_virtual_to_real_filepath(data);
+    break;
+
   case DMTCP_EVENT_PRESUSPEND:
     break;
 
@@ -280,7 +335,7 @@ pid_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_RESTART:
     pidVirt_PostRestart();
-    dmtcp_global_barrier("PID:RESTART");
+    dmtcp_local_barrier("PID:RESTART");
     pidVirt_PostRestartRefill();
     break;
 

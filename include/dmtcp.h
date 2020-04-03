@@ -70,17 +70,60 @@ typedef enum eDmtcpEvent {
   DMTCP_EVENT_RESUME,
   DMTCP_EVENT_RESTART,
 
+  DMTCP_EVENT_OPEN_FD,
+  DMTCP_EVENT_REOPEN_FD,
+  DMTCP_EVENT_CLOSE_FD,
+  DMTCP_EVENT_DUP_FD,
+
+  DMTCP_EVENT_VIRTUAL_TO_REAL_PATH,
+  DMTCP_EVENT_REAL_TO_VIRTUAL_PATH,
+
   nDmtcpEvents
 } DmtcpEvent_t;
 
 typedef union _DmtcpEventData_t {
   struct {
-    int fd;
-  } serializerInfo;
+    int serializationFd;
+    char *filename;
+    size_t maxArgs;
+    const char **argv;
+    size_t maxEnv;
+    const char **envp;
+  } preExec;
+
+  struct {
+    int serializationFd;
+  } postExec;
 
   struct {
     int isRestart;
   } resumeUserThreadInfo, nameserviceInfo;
+
+  struct {
+    int fd;
+    const char *path;
+    int flags;
+    mode_t mode;
+  } openFd;
+
+  struct {
+    int fd;
+    const char *path;
+    int flags;
+  } reopenFd;
+
+  struct {
+    int fd;
+  } closeFd;
+
+  struct {
+    int oldFd;
+    int newFd;
+  } dupFd;
+
+  struct {
+    char *path;
+  } realToVirtualPath, virtualToRealPath;
 } DmtcpEventData_t;
 
 typedef void (*HookFunctionPtr_t)(DmtcpEvent_t, DmtcpEventData_t *);
@@ -188,6 +231,11 @@ int dmtcp_is_enabled(void) __attribute((weak));
  * Checkpoint the entire distributed computation
  *   (Does not necessarily block until checkpoint is complete.
  *    Use dmtcp_get_generation() to test if checkpoint is complete.)
+ * NOTE:  This macro is blocking.  dmtcp_checkpoint() will not return
+ *        until a checkpoint is taken.  This guarantees that the
+ *        current _thread_ blocks until the current process has been
+ *        checkpointed.  It guarantees nothing about other threads or
+ *        other processes.
  * + returns DMTCP_AFTER_CHECKPOINT if the checkpoint succeeded.
  * + returns DMTCP_AFTER_RESTART    after a restart.
  * + returns <=0 on error.
@@ -221,7 +269,17 @@ int dmtcp_enable_ckpt(void) __attribute__((weak));
 
 void dmtcp_initialize_plugin(void) __attribute((weak));
 
+/*
+ * Global barriers are required when a plugin needs inter-node synchronization,
+ * such as using the coordinator name-service database. Currently, only the
+ * socket, RM, and InfiniBand plugins need global barriers. All other plugins
+ * handle node-local resources such as files, pids, etc., and are fine with
+ * using local barriers.
+ * A simple thumb rule is to always insert a global-barrier between registering
+ * and querying the coordinator name-service database.
+ */
 void dmtcp_global_barrier(const char *barrier) __attribute((weak));
+void dmtcp_local_barrier(const char *barrier) __attribute((weak));
 
 // See: test/plugin/example-db dir for an example:
 int dmtcp_send_key_val_pair_to_coordinator(const char *id,

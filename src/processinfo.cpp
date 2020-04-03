@@ -79,7 +79,7 @@ processInfo_EventHook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_PRE_EXEC:
   {
-    jalib::JBinarySerializeWriterRaw wr("", data->serializerInfo.fd);
+    jalib::JBinarySerializeWriterRaw wr("", data->preExec.serializationFd);
     ProcessInfo::instance().getState();
     ProcessInfo::instance().serialize(wr);
     break;
@@ -87,7 +87,7 @@ processInfo_EventHook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_POST_EXEC:
   {
-    jalib::JBinarySerializeReaderRaw rd("", data->serializerInfo.fd);
+    jalib::JBinarySerializeReaderRaw rd("", data->postExec.serializationFd);
     ProcessInfo::instance().serialize(rd);
     ProcessInfo::instance().postExec();
     break;
@@ -212,7 +212,7 @@ ProcessInfo::growStack()
     } else if ((VA)&area >= area.addr && (VA)&area < area.endAddr) {
       JTRACE("Original stack area") ((void *)area.addr) (area.size);
       stackArea = area;
-
+      _endOfStack = (uintptr_t) area.endAddr;
       /*
        * When using Matlab with dmtcp_launch, sometimes the bottom most
        * page of stack (the page with highest address) which contains the
@@ -276,7 +276,7 @@ ProcessInfo::init()
   _elfType = Elf_64;
 #endif // ifdef CONFIG_M32
 
-  _vdsoStart = _vdsoEnd = _vvarStart = _vvarEnd = 0;
+  _vdsoStart = _vdsoEnd = _vvarStart = _vvarEnd = _endOfStack = 0;
 
   processRlimit();
 
@@ -285,9 +285,15 @@ ProcessInfo::init()
   // Reserve space for restoreBuf
   _restoreBufLen = RESTORE_TOTAL_SIZE;
 
-  _restoreBufAddr = (uint64_t) mmap(NULL, _restoreBufLen, PROT_NONE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  JASSERT(_restoreBufLen != (uint64_t) MAP_FAILED) (JASSERT_ERRNO);
+  int pagesize = getpagesize();
+  _restoreBufAddr = (uint64_t) mmap(NULL, _restoreBufLen + 2*pagesize,
+                    PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  JASSERT(_restoreBufAddr != (uint64_t) MAP_FAILED) (JASSERT_ERRNO);
+  _restoreBufAddr = (uint64_t)(_restoreBufAddr + pagesize);
+  // Guard page _restoreBufAddr; prevent kernel from merging regions
+  mprotect((char *)_restoreBufAddr - pagesize, pagesize, PROT_EXEC);
+  JASSERT(_restoreBufLen % pagesize == 0) (_restoreBufLen) (pagesize);
+  mprotect((char *)_restoreBufAddr + _restoreBufLen, pagesize, PROT_EXEC);
 
   if (_ckptDir.empty()) {
     updateCkptDirFileSubdir();
@@ -509,7 +515,7 @@ void
 ProcessInfo::restart()
 {
   // Unmap the restore buffer and remap it with PROT_NONE. We do munmap followed
-  // mmap to ensure that the kernel releases the backing physical pages.
+  // by mmap to ensure that the kernel releases the backing physical pages.
   JASSERT(munmap((void *)_restoreBufAddr, _restoreBufLen) == 0)
     ((void *)_restoreBufAddr) (_restoreBufLen) (JASSERT_ERRNO);
 
@@ -775,7 +781,7 @@ ProcessInfo::serialize(jalib::JBinarySerializer &o)
     & _gettimeofday_offset & _time_offset;
   o & _compGroup & _numPeers & _noCoordinator & _argvSize & _envSize;
   o & _restoreBufAddr & _savedHeapStart & _savedBrk;
-  o & _vdsoStart & _vdsoEnd & _vvarStart & _vvarEnd;
+  o & _vdsoStart & _vdsoEnd & _vvarStart & _vvarEnd & _endOfStack;
   o & _ckptDir & _ckptFileName & _ckptFilesSubDir;
 
   JTRACE("Serialized process information")

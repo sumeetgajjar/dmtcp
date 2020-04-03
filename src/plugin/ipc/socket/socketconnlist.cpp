@@ -1,4 +1,3 @@
-
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -22,40 +21,52 @@ dmtcp_SocketConnList_EventHook(DmtcpEvent_t event, DmtcpEventData_t *data)
   SocketConnList::instance().eventHook(event, data);
 
   switch (event) {
+  case DMTCP_EVENT_CLOSE_FD:
+    SocketConnList::instance().processClose(data->closeFd.fd);
+    break;
+
+  case DMTCP_EVENT_DUP_FD:
+    SocketConnList::instance().processDup(data->dupFd.oldFd, data->dupFd.newFd);
+    break;
+
   case DMTCP_EVENT_PRESUSPEND:
     break;
 
   case DMTCP_EVENT_PRECHECKPOINT:
     SocketConnList::saveOptions();
-    dmtcp_global_barrier("Socket::Pre_Ckpt");
+    dmtcp_local_barrier("Socket::Pre_Ckpt");
     SocketConnList::leaderElection();
-    dmtcp_global_barrier("Socket::Leader_Election");
+    dmtcp_local_barrier("Socket::Leader_Election");
+
+    // We need a global barrier after registering name-service data so that all
+    // our peers have registered their info before we start sending queries.
     SocketConnList::ckptRegisterNSData();
     dmtcp_global_barrier("Socket::Ckpt_Register_Peer_Info");
     SocketConnList::ckptSendQueries();
-    dmtcp_global_barrier("Socket::Ckpt_Retrieve_Peer_Info");
+
+    dmtcp_local_barrier("Socket::Ckpt_Retrieve_Peer_Info");
     SocketConnList::drainFd();
-    dmtcp_global_barrier("Socket::Drain");
+    dmtcp_local_barrier("Socket::Drain");
     SocketConnList::ckpt();
     break;
 
   case DMTCP_EVENT_RESUME:
     SocketConnList::resumeRefill();
-    dmtcp_global_barrier("Socket::Resume_Refill");
+    dmtcp_local_barrier("Socket::Resume_Refill");
     SocketConnList::resumeResume();
     break;
 
   case DMTCP_EVENT_RESTART:
     SocketConnList::restart();
-    dmtcp_global_barrier("Socket::Restart_Post_Restart");
+    dmtcp_local_barrier("Socket::Restart_Post_Restart");
 
     // We might be able to mark the next barrier as PRIVATE too.
     SocketConnList::restartRegisterNSData();
     dmtcp_global_barrier("Socket::Restart_Ns_Register_Data");
     SocketConnList::restartSendQueries();
-    dmtcp_global_barrier("Socket::Restart_Ns_Send_Queries");
+    dmtcp_local_barrier("Socket::Restart_Ns_Send_Queries");
     SocketConnList::restartRefill();
-    dmtcp_global_barrier("Socket::Restart_Refill");
+    dmtcp_local_barrier("Socket::Restart_Refill");
     SocketConnList::restartResume();
     break;
 
@@ -78,18 +89,6 @@ void
 ipc_initialize_plugin_socket()
 {
   dmtcp_register_plugin(socketPlugin);
-}
-
-void
-dmtcp_SocketConn_ProcessFdEvent(int event, int arg1, int arg2)
-{
-  if (event == SYS_close) {
-    SocketConnList::instance().processClose(arg1);
-  } else if (event == SYS_dup) {
-    SocketConnList::instance().processDup(arg1, arg2);
-  } else {
-    JASSERT(false);
-  }
 }
 
 static SocketConnList *socketConnList = NULL;
@@ -209,8 +208,6 @@ void
 SocketConnList::registerNSData()
 {
   ConnectionRewirer::instance().registerNSData();
-
-  ConnectionList::registerNSData();
 }
 
 void
@@ -219,8 +216,6 @@ SocketConnList::sendQueries()
   ConnectionRewirer::instance().sendQueries();
   ConnectionRewirer::instance().doReconnect();
   ConnectionRewirer::destroy();
-
-  ConnectionList::sendQueries();
 }
 
 void

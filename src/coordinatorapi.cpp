@@ -391,7 +391,8 @@ recvMsgFromCoordinatorRaw(int fd, DmtcpMessage *msg, void **extraData)
 
     // Caller must free this buffer
     void *buf = JALLOC_HELPER_MALLOC(tmpMsg.extraBytes);
-    if (Util::readAll(fd, buf, tmpMsg.extraBytes) != tmpMsg.extraBytes) {
+    if (Util::readAll(fd, buf, tmpMsg.extraBytes) !=
+        (ssize_t)tmpMsg.extraBytes) {
       JALLOC_HELPER_FREE(buf);
       return;
     }
@@ -799,8 +800,8 @@ sendKeyValPairToCoordinator(const char *id,
   }
 
   JASSERT(Util::writeAll(sock, &msg, sizeof(msg)) == sizeof(msg));
-  JASSERT(Util::writeAll(sock, key, key_len) == key_len);
-  JASSERT(Util::writeAll(sock, val, val_len) == val_len);
+  JASSERT(Util::writeAll(sock, key, key_len) == (ssize_t)key_len);
+  JASSERT(Util::writeAll(sock, val, val_len) == (ssize_t)val_len);
 
   return 1;
 }
@@ -842,7 +843,7 @@ sendQueryToCoordinator(const char *id,
   }
 
   JASSERT(Util::writeAll(sock, &msg, sizeof(msg)) == sizeof(msg));
-  JASSERT(Util::writeAll(sock, key, key_len) == key_len);
+  JASSERT(Util::writeAll(sock, key, key_len) == (ssize_t)key_len);
 
   msg.poison();
 
@@ -853,7 +854,7 @@ sendQueryToCoordinator(const char *id,
 
   JASSERT(*val_len >= msg.valLen);
   *val_len = msg.valLen;
-  JASSERT(Util::readAll(sock, val, *val_len) == *val_len);
+  JASSERT(Util::readAll(sock, val, *val_len) == (ssize_t)*val_len);
 
   return *val_len;
 }
@@ -893,7 +894,7 @@ int getUniqueIdFromCoordinator(const char *id,
   }
 
   JASSERT(Util::writeAll(sock, &msg, sizeof(msg)) == sizeof(msg));
-  JASSERT(Util::writeAll(sock, key, key_len) == key_len);
+  JASSERT(Util::writeAll(sock, key, key_len) == (ssize_t)key_len);
 
   msg.poison();
 
@@ -1086,21 +1087,21 @@ waitForCheckpointCommand()
 
   bool exitWhenDone = false;
   switch (msg.coordCmd) {
-  // case 'b': case 'B':  // prefix blocking command, prior to checkpoint
+  // case 'b':  // prefix blocking command, prior to checkpoint
   // command
   // JTRACE("blocking checkpoint beginning...");
   // blockUntilDone = true;
   // break;
-  case 's': case 'S':
+  case 's':
     JTRACE("Received status command");
     reply.numPeers = 1;
     reply.isRunning = 1;
     break;
-  case 'c': case 'C':
+  case 'c':
     JTRACE("checkpointing...");
     break;
-  case 'k': case 'K':
-  case 'q': case 'Q':
+  case 'k':
+  case 'q':
     JTRACE("Received KILL command from user, exiting");
     exitWhenDone = true;
     break;

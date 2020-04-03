@@ -158,7 +158,7 @@ sysvipc_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_PRE_EXEC:
   {
-    jalib::JBinarySerializeWriterRaw wr("", data->serializerInfo.fd);
+    jalib::JBinarySerializeWriterRaw wr("", data->preExec.serializationFd);
     SysVShm::instance().serialize(wr);
     SysVSem::instance().serialize(wr);
     SysVMsq::instance().serialize(wr);
@@ -167,7 +167,7 @@ sysvipc_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_POST_EXEC:
   {
-    jalib::JBinarySerializeReaderRaw rd("", data->serializerInfo.fd);
+    jalib::JBinarySerializeReaderRaw rd("", data->postExec.serializationFd);
     SysVShm::instance().serialize(rd);
     SysVSem::instance().serialize(rd);
     SysVMsq::instance().serialize(rd);
@@ -179,9 +179,9 @@ sysvipc_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_PRECHECKPOINT:
     leaderElection();
-    dmtcp_global_barrier("SVIPC:Leader_Election");
+    dmtcp_local_barrier("SVIPC:Leader_Election");
     preCkptDrain();
-    dmtcp_global_barrier("SVIPC:Drain");
+    dmtcp_local_barrier("SVIPC:Drain");
     preCheckpoint();
     break;
 
@@ -191,9 +191,9 @@ sysvipc_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
 
   case DMTCP_EVENT_RESTART:
     postRestart();
-    dmtcp_global_barrier("SVIPC:Restart");
+    dmtcp_local_barrier("SVIPC:Restart");
     restartRefill();
-    dmtcp_global_barrier("SVIPC:Refill");
+    dmtcp_local_barrier("SVIPC:Refill");
     restartResume();
     break;
 

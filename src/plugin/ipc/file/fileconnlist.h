@@ -60,10 +60,6 @@ class FileConnList : public ConnectionList
 
     static void restart() { instance().postRestart(); }
 
-    static void restartRegisterNSData() { instance().registerNSData(); }
-
-    static void restartSendQueries() { instance().sendQueries(); }
-
     static void restartRefill() { instance().refill(true); }
 
     static void restartResume() { instance().resume(true); }
@@ -85,6 +81,8 @@ class FileConnList : public ConnectionList
     Connection *findDuplication(int fd, const char *path);
     void processFileConnection(int fd, const char *path, int flags,
                                mode_t mode);
+
+    void processReopen(int fd, const char *newPath);
 
     void prepareShmList();
     void remapShmMaps();
