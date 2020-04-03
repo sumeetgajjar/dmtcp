@@ -15,9 +15,11 @@ ifndef DMTCP_ROOT
 endif
 DMTCP_INCLUDE=${DMTCP_ROOT}/include
 
-override CFLAGS += -fPIC -I${DMTCP_INCLUDE}
-override CXXFLAGS += -fPIC -I${DMTCP_INCLUDE}
-LINK = ${CC}
+PYTHON_INCLUDE=/usr/include/python2.7/
+
+override CFLAGS += -fPIC -I${DMTCP_INCLUDE} -I${PYTHON_INCLUDE}
+override CXXFLAGS += -fPIC -I${DMTCP_INCLUDE} -I{PYTHON_INCLUDE}
+LINK = ${CC} -lpthread -L/usr/lib/python2.7/config-x86_64-linux-gnu -lpython2.7
 
 # if version.h not found:
 ifeq (,$(wildcard ${DMTCP_INCLUDE}/dmtcp/version.h))
@@ -35,8 +37,8 @@ check: ${LIBNAME}.so ${DMTCP_ROOT}/test/dmtcp1
 	@ ${DMTCP_ROOT}/bin/dmtcp_command --quit --quiet \
 	  --coord-port ${DEMO_PORT} 2>/dev/null || true
 	# Note that full path of plugin (using $$PWD in this case) is required.
-	${DMTCP_ROOT}/bin/dmtcp_launch --coord-port ${DEMO_PORT} --interval 5 \
-	  --with-plugin $$PWD/${LIBNAME}.so ${DMTCP_ROOT}/test/dmtcp1
+	${DMTCP_ROOT}/bin/dmtcp_launch --coord-port ${DEMO_PORT} --interval 2 \
+	  --with-plugin $$PWD/${LIBNAME}.so ${DMTCP_ROOT}/test/plugin/example/testing.py
 
 ${LIBNAME}.so: ${LIBOBJS}
 	${LINK} -shared -fPIC -o $@ $^
